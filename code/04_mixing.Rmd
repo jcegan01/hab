@@ -20,6 +20,6 @@ load(paste0(dirpath,"hab/data/wqdata_cleaned.rda"))
 ```
 
 ## 1.4 Assign reservoirs to mixing regime
-```{r. echo=FALSE}
+```{r, echo=FALSE}
 
 ```

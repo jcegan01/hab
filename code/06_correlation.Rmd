@@ -20,7 +20,7 @@ load(paste0(dirpath,"hab/data/wqdata_cleaned.rda"))
 ```
 
 ## 1.6 Cross correlation of time series (esp. chla, our bloom indicator )
-```{r. echo=FALSE}
+```{r, echo=FALSE}
 
 ```
 

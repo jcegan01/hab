@@ -20,6 +20,6 @@ load(paste0(dirpath,"hab/data/wqdata_cleaned.rda"))
 ```
 
 ## 1.5 Apply Mann-Kendall test to time series to find increasing trends
-```{r. echo=FALSE}
+```{r, echo=FALSE}
 
 ```
