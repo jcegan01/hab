@@ -1,0 +1,62 @@
+---
+title: "o2 Plots"
+output: html_document
+---
+
+Author: Kaitlin Volk; with edits by Jeff Cegan  
+Date: May 19, 2021  
+Project HAB with Jodi Ryder  
+
+```{r, include=FALSE}
+#load global packages and variables
+source("~/Documents/GitHub/hab/code/00_global.R") #adjust to your computer specs
+```
+
+### Load and filter data. 
+Summary of data:
+
+```{r, echo=FALSE}
+load(paste0(dirpath,"hab/data/wqdata_cleaned.rda"))
+```
+
+## 1.2 Time series plots for a single location
+
+```{r, echo=FALSE}
+#They're pretty messy, especially temp and DO if we don't control for depth.
+dat4 %>% filter(loc_id=="TAR20001") %>%             #choose one sample site
+  ggplot(aes(x=sample_date,y=value, color=depth)) + #graph values over time, with color displayign depth
+  geom_point() + geom_smooth(method = "loess") +    #add loess curve to look at trend
+  facet_wrap(~param,nrow=4,scales = "free_y")       #facet by paramter
+
+#What if we do data for a single reservoir instead of a single site? -> Messier
+dat4 %>% filter(reservoir=="TAR") %>%               #Choose single reservoir instead of single site
+  ggplot(aes(x=sample_date,y=value, color=depth)) + #do the same as above 
+  geom_point() + geom_smooth(method = "loess") + facet_wrap(~param,nrow=4,scales = "free_y")
+#Surface only
+test.graph <-dat4 %>% filter(reservoir=="TAR" & depth==0) %>% #use only data where the depth=0 (surface) 
+  ggplot(aes(x=sample_date,y=value)) + geom_point() + geom_smooth(method = "loess") + 
+  facet_wrap(~param,nrow=4,scales = "free_y")
+test.graph 
+
+#I'm thinking we could have a default (like all data color coded for depth or just surface) 
+#and then the ability for the users to select/input a depth or depth range
+
+#The SOW wants a label of how many data points are displayed on the graph. I make a table 
+#of these values below but then the code I looked up to add it to a facet with different y axes
+#doesn't work and I don't know why
+site.nsamples <- dat4 %>% group_by(loc_id, param) %>% summarize(count=n()) %>% ungroup() %>% #Get counts for the number of observations per param per site
+  pivot_wider(names_from = param, values_from=count) %>% mutate_all(~replace(., is.na(.), 0)) #give each param a column and replace na's with 0's
+
+reservoir.nsamples<- dat4 %>%  group_by(reservoir, param) %>% summarize(count=n(),   #Get counts for the number of observations per param per reservoir
+                                                                        ystar=(0.8 * max(value)))  #y placement for graph (doesn't seem to work though) 
+
+test.graph + geom_text(data=reservoir.nsamples,   #counts from the reservoir.nsamples table
+                       aes(y=ystar, x=ymd(2010-01-01), label=paste("N=", count)), #placement and content of label
+                       colour="red", inherit.aes=FALSE, parse=TRUE)         #Doesn't work...
+
+#Also adding # samples for each parameter to the reserveroir summary table so it's all in one place
+reservoir.summary2 <- reservoir.nsamples %>% select(-4) %>% pivot_wider(names_from = param, values_from=count) %>% #remove graphing column and spread 
+  mutate_all(~replace(., is.na(.), 0)) %>% right_join(reservoir.summary, by="reservoir") %>% #replace NAs with 0's
+  relocate(n.sites, .after=reservoir) #put number of sites before # of param samples
+rm(reservoir.summary) #remove previous version
+```
