@@ -1,17 +1,26 @@
-#Author: Kaitlin Volk; with edits by Jeff Cegan
-#Date: May 19, 2021
-#Project HAB with Jodi Ryder
+---
+title: "wrangle"
+output: html_document
+---
 
+Author: Kaitlin Volk; with edits by Jeff Cegan  
+Date: May 19, 2021  
+Project HAB with Jodi Ryder  
+
+```{r libraries, include=FALSE}
 library(dplyr)
 library(stringr)
 library(lubridate)
 library(ggplot2)
 library(grid)
 library(tidyr)
+```
 
-###----Data exploration----
-##====Load and format data====
-load("data/reservoir_wq.rda") #the text file of the results tab from the Louisville DASLER
+### Load and filter data. 
+Summary of data:
+
+```{r, echo=FALSE}
+load("~/Documents/GitHub/hab/data/reservoir_wq.rda")
 
 names(dat) <- c("loc_id", "sample_num", "lab_id","lab_snum", "storet_num", "units",   
                 "value", "text_value", "detect","pquant", "pre_recov", "post_recov",
@@ -40,11 +49,14 @@ dat2 <- dat %>%
          reservoir = str_sub(loc_id,1,3)) %>% #reservior of sample
   select(c(1,30,2,28, 25, 26,29,24,7,6)) %>% #extract just the location, date, depth, and paramater data
   filter(param %in% target.param, !is.na(value)) #extract rows with the priority parameters only and remove NA's
+summary(dat2)
+```
 
+### Exploring ChlA data with Plots
+ChlA is an important variable for identifying HABs and for the correlations in 1.6 of the SOW  
+Two methods have been used: trichromatic and Spectrophotomatic. Is one better? Should they both be used?
 
-##====Explore ChlA data==== 
-#ChlAis an important variable for identifying HABs and for the correlations in 1.6 of the SOW
-#Two methods have been used: trichromatic and Spectrophotomatic. Is one better? Should they both be used?
+```{r, echo=FALSE}
 dat.chla <- dat2 %>% filter(param == "chlA_tri"| param =="chlA_spect",!is.na(value)) #pull just the chla dat
 ggplot(dat.chla, aes(x=sample_date, y=value, color=param)) + geom_line() +  #graph chla over time for the two methods
   ylim(0,200) + facet_wrap( ~ reservoir, nrow = 6)                          #facet by reservior to see differences
@@ -59,8 +71,11 @@ dat3 <- dat2 %>% mutate(param = recode(param, "chlA_tri" = "chlA", "chlA_spect" 
 dat3w <- dat3 %>% select(-10) %>% pivot_wider(names_from= param, values_from = value, values_fn=mean) 
 rm(dat2) #remove previous version
 
-  
-##====Look for outliers/weirdness in the variables====
+```
+
+### Look for outliers/weirdness in the variables
+
+```{r, echo=FALSE}
 ggplot(dat3w) + geom_qq(aes(sample=temp_c)) #exclude below -2 and above 40
 ggplot(dat3w) + geom_qq(aes(sample=DO_mgl)) #eclude below 0 and above 50
 ggplot(dat3w) + geom_qq(aes(sample=flow))   #one outlier at over 13000 cfu (next highest 5388)
@@ -71,8 +86,10 @@ ggplot(dat3w) + geom_qq(aes(sample=P_total)) # gonna need to mess around with th
 ggplot(dat3w) + geom_qq(aes(sample=depth)) #exclude above 200 
 ggplot(dat3w) + geom_qq(aes(sample=depth)) + facet_wrap(~reservoir, nrow=6) #depth by reservoir confirm that I should exclude depths over 200
 #Tested and looks passable: chla, phoshate (only 7 values), nitrate, N_total, secchi_in,TDS, ammonia
+```
 
-#Dive into total phosphorous (P_total)
+### Dive into total phosphorous (P_total)
+```{r, echo=FALSE}
 dat.p <- dat3 %>% filter(param=="P_total") %>%                               #Looking at P data only
   mutate(units=recode(units, "MG/L" = "mg/L", "mg/l" = "mg/L", "pH"="ug/L")) #simplify variations so you only have ug/L and mg/L
 
@@ -85,8 +102,10 @@ dat.p %>% filter(value>1000) %>% ggplot(aes(x=sample_date, y=value, color=units)
 #If x is less than 1, convert to ug/l by multiplying value by 1000 
 #if x > 1 but < 1000, recode mg/l to be uq/l
 #if x > 1000, exclude regardless of unit
+```
 
-#Clean the data
+### Clean the data
+```{r, echo=FALSE}
 fine <- c("chlA", "phosphate", "nitrate","N_total", "secchi_in", "TDS", "ammonia")   #parameters that won't be cleaned
 
 dat4 <- dat3 %>% filter((param=="temp_c" & value <40 & value> -2)|      #exclude outlying data that
@@ -104,8 +123,10 @@ rm(dat3) #remove previous version
 
 dat4w <- dat4%>% select(-10) %>% pivot_wider(names_from= param, values_from = value, values_fn=mean)
 rm(dat3w) #remove previous version
+```
 
-#Visualize the cleaned data
+### Visualize the cleaned data
+```{r, echo=FALSE}
 ggplot(dat4w) + geom_qq(aes(sample=temp_c))
 ggplot(dat4w) + geom_qq(aes(sample=DO_mgl)) 
 ggplot(dat4w) + geom_qq(aes(sample=flow))   
@@ -114,12 +135,16 @@ ggplot(dat4w) + geom_qq(aes(sample=TSS))
 ggplot(dat4w) + geom_qq(aes(sample=C_total)) 
 ggplot(dat4w) + geom_qq(aes(sample=P_total))
 ggplot(dat4w) + geom_qq(aes(sample=depth)) + facet_wrap(~reservoir, nrow=6)
+```
+### Curious about how many reserviors and sites per reservoir there are:
 
-#Curious about how many reserviors and sites per reservoir there are:
+```{r, echo=FALSE}
 reservoir.summary <- dat4 %>% group_by(reservoir) %>% summarize(n.sites = n_distinct(loc_id))  #Get counts for the number of samples sites per reservoir
+reservoir.summary 
+```
+## 1.2 Time series plots for a single location
 
-
-##==== 1.2 Time series plots for a single location====
+```{r, echo=FALSE}
 #They're pretty messy, especially temp and DO if we don't control for depth.
 dat4 %>% filter(loc_id=="TAR20001") %>%             #choose one sample site
   ggplot(aes(x=sample_date,y=value, color=depth)) + #graph values over time, with color displayign depth
@@ -157,14 +182,15 @@ reservoir.summary2 <- reservoir.nsamples %>% select(-4) %>% pivot_wider(names_fr
   mutate_all(~replace(., is.na(.), 0)) %>% right_join(reservoir.summary, by="reservoir") %>% #replace NAs with 0's
   relocate(n.sites, .after=reservoir) #put number of sites before # of param samples
 rm(reservoir.summary) #remove previous version
+```
 
+## 1.3 Characterizing reservoirs based on last five years of summer months (may-sept)  
+             Oligo   Meso    Eutro  
+TP (ug/L)    8       27      84     
+TN (mg/L)    .66     .75     1.9  
+ChlA (ug/L)  1.7     4.7     14  
 
-##==== 1.3 Characterizing reservoirs based on last five years of summer months (may-sept)====
-#             Oligo   Meso    Eutro
-#TP (ug/L)    8       27      84   
-#TN (mg/L)    .66     .75     1.9
-#ChlA (ug/L)  1.7     4.7     14
-
+```{r, echo=FALSE}
 trophic.param <- c("P_total", "N_total","chlA")   #Paramters that we'll use to determine trophic state
 summer.months <- c("05", "06", "07", "08", "09")  #Summer months as specified in SOW (May-Sept)
 
@@ -204,13 +230,20 @@ trophicstates <- dat4 %>%
 reservoir.summary3 <- left_join(reservoir.summary2, trophicstates, by="reservoir") %>% 
   select(-(17:23)) %>% relocate(trophic_state, .after = n.sites) 
 rm(reservoir.summary2) #remove previous iteration; reminder, the values for the different parameters are counts of samples
+```
 
+## 1.4 Assign reservoirs to mixing regime
+```{r. echo=FALSE}
 
-##==== 1.4 Assign reservoirs to mixing regime====
+```
 
+## 1.5 Apply Mann-Kendall test to time series to find increasingtrends
+```{r. echo=FALSE}
 
-##==== 1.5 Apply Mann-Kendall test to time series to find increasingtrends====
+```
 
+## 1.6 Cross correlation of time series (esp. chla, our bloom indicator )
+```{r. echo=FALSE}
 
-##==== 1.6 Cross correlation of time series (esp. chla, our bloom indicator )
+```
 
