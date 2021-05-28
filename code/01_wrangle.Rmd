@@ -9,14 +9,14 @@ Project HAB with Jodi Ryder
 
 ```{r, include=FALSE}
 #load global packages and variables
-source("~/Documents/GitHub/hab/code/00_global.R") #adjust to your computer specs
+source("00_global.R") #in the same folder as the .rmd file
 ```
 
 ### Load and filter data. 
 Summary of data:
 
 ```{r, echo=FALSE}
-load(paste0(dirpath,"hab/data/wqdata.rda"))
+load(paste0(dirpath,"wqdata.rda")) #so full path is ../data/wgdata.rda 
 names(dat) <- c("loc_id", "sample_num", "lab_id","lab_snum", "storet_num", "units",   
                 "value", "text_value", "detect","pquant", "pre_recov", "post_recov",
                 "dilution", "lab_anlz", "dcl_flag", "date_entered", "revision", "val_qual", #I exported the text file without headers
@@ -138,7 +138,7 @@ reservoir.summary
 ```
 Save cleaned data
 ```{r, echo=FALSE}
-save(dat4, file = paste0(dirpath,"hab/data/wqdata_cleaned.rda"))
+save(dat4, file = paste0(dirpath,"wqdata_cleaned.rda"))
 ```
 
 

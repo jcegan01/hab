@@ -9,14 +9,14 @@ Project HAB with Jodi Ryder
 
 ```{r, include=FALSE}
 #load global packages and variables
-source("~/Documents/GitHub/hab/code/00_global.R") #adjust to your computer specs
+source("00_global.R") #adjust to your computer specs
 ```
 
 ### Load and filter data. 
 Summary of data:
 
 ```{r, echo=FALSE}
-load(paste0(dirpath,"hab/data/wqdata_cleaned.rda"))
+load(paste0(dirpath,"wqdata_cleaned.rda"))
 ```
 
 ## 1.5 Apply Mann-Kendall test to time series to find increasing trends
