@@ -1,0 +1,13 @@
+name: habloom
+title: habloom
+username:
+account: erdc-riskanddecisionscience
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 4214739
+bundleId: 4669361
+url: https://erdc-riskanddecisionscience.shinyapps.io/habloom/
+when: 1622648089.84907
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: data/wqdata.rda
