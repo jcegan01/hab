@@ -3,13 +3,15 @@ title: "06 Correlation"
 output: html_document
 ---
 
-Author: Kaitlin Volk; with edits by Jeff Cegan  
-Date: May 19, 2021  
+Author: Kaitlin Volk; with edits by Jeff Cegan and Alex Ligo
+Date: June 15, 2021  
 Project HAB with Jodi Ryder  
 
 ```{r, include=FALSE}
+library(tsibble)
+
 #load global packages and variables
-source("~/Documents/GitHub/hab/code/00_global.R") #adjust to your computer specs
+source("00_global.R") #adjust to your computer specs
 ```
 
 ### Load and filter data. 
@@ -20,7 +22,25 @@ load(paste0(dirpath,"hab/data/wqdata_cleaned.rda"))
 ```
 
 ## 1.6 Cross correlation of time series (esp. chla, our bloom indicator )
-```{r, echo=FALSE}
+split parameters in columns
+```{r}
+ts <- dat4 %>% 
+  mutate( mo = yearmonth(sample_date) ) %>%  # index to aggregate variables by month
+  select(-sample_num, -sample_date, -yr) %>%
+  group_by(reservoir, mo, depth, param) %>%
+  summarise(value = mean(value), .groups = 'drop_last') %>%  # values averaged by reservoir, month, and depth
+  pivot_wider(id_cols = c(reservoir, mo, depth), names_from = param) %>%
+  ungroup()
 
+# transforms object for easier time indexing
+ts <- ts %>%
+  as_tsibble(key = c(reservoir, depth),
+             index = mo)
 ```
 
+## visualize pairwise correlations
+```{r, fig.height=6, fig.width=6}
+ts %>%
+  filter(reservoir == 'TAR' & depth == 0) %>%
+  GGally::ggpairs(columns = c(13,4:11,14,16))
+```
