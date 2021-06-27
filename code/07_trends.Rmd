@@ -1,0 +1,210 @@
+---
+title: "07 Prediction (exploratory analysis with basic algorithms)"
+output:
+  word_document: default
+  html_document: default
+---
+
+Author: Alex Ligo
+Date: June 15, 2021  
+Project HAB with Jodi Ryder  
+
+```{r, include=FALSE}
+#load global packages and variables
+source("00_global.R") #adjust to your computer specs
+
+library(tsibble)
+library(fabletools)
+library(EnvStats)
+```
+
+### Load and filter data. 
+Summary of data:
+
+```{r, echo=FALSE}
+load(paste0(dirpath,"hab/data/wqdata_cleaned.rda"))
+```
+
+## autocorrelation coefficients
+
+Average everything by month
+```{r monthly_avg, fig.height=15, fig.width=7}
+dat_avg_ym <- dat4 %>% 
+  mutate( ym = yearmonth(sample_date) ) %>%
+  group_by(reservoir, loc_id, ym, depth, param) %>%
+  summarise(value = mean(value), .groups = 'drop_last') %>%
+  ungroup()
+```
+
+## Mann-Kendall test on each timeseries, considering sesonality and autocorrelated data
+https://cran.r-project.org/web/packages/EnvStats/EnvStats.pdf
+The function below creates a data frame with the following results per reservoir/loc_id/depth/parameter:
+- ptrend: p-value of whether the trend is statistically significant
+- phet: p-value of whether difference in trend among seasons is statistically significant
+- sl: magnitude of slope of trend
+Note: Mann-Kendall's tau statistic is another statistics associated with a trend but we are not using it. If tau is close to 1, observations obtained later in time tend to be larger than observations made earlier. If tau is close to -1, then observations made later in time tend to be smaller than observations made earlier. However, TAU DOESN'T INDICATE HOW MUCH STRONG IS THE TREND. It just indicates how monotonic the trend is.
+https://vsp.pnnl.gov/help/vsample/design_trend_mann_kendall.htm
+
+```{r, function_mk_test}
+KSTT <- function(tb, grp){
+  # this is a function fo apply the Mann-Kendall test on a single timeseries with seasonality and autocorrelation
+  # tb is a tibble containing a single time series with one row per month
+  print('group tb')
+  print(grp)
+#  print(tb)
+  
+  # find latest sequence of uninterrupted years
+  # yrs <- sort(unique(year(tb$ym)), decreasing = TRUE)
+  # print('yrs')
+  # print(yrs)
+  # d <- which(c(-1, diff(yrs)) == -1)
+  # ye <- yrs[d[1]]
+  # yrs <- yrs[yrs<ye]
+  # d <- which(c(-1, diff(yrs)) != -1)
+  # ys <- yrs[d[1] - 1]
+  # print('yr range')
+  # print(c(ys,ye))
+
+  # convert to tstibble and fill month gaps with NA
+  ts <- tb %>%
+    as_tsibble(index = ym) %>%
+    fill_gaps(.full = FALSE) %>%
+    mutate(yr = year(ym), mo = month(ym)) # %>%
+#    filter(yr >= ys & yr <= ye)
+
+#  print( ts %>% filter(yr>2015))
+  
+  # find years that are complete, i.e. have 12 months
+  yrs <- ts %>% 
+    index_by(yr) %>% 
+    summarise(n = n()) %>%
+    filter(n == 12)
+#  print('yrs')
+#  print(yrs$yr)
+  
+  # number of non-missing points in the last 10 years
+  nrecent <- sum(!is.na(ts$value[ts$yr > 2011]))
+    
+  if (nrow(yrs) >= 2 & nrecent > 10){
+    ts_f <- ts %>%
+      filter(yr %in% yrs$yr)
+
+#    print('not na')
+#    print(sum(!is.na(ts_f$value)))
+#    print(ts_f)
+    
+    mocnt <- ts_f %>% 
+      index_by(mo) %>%
+      summarise(n = sum(!is.na(value))) %>%
+      filter( n > 2 )
+#    print(tmp)
+    if (nrow(mocnt) > 0){
+      # at least one month have data in at least two years
+
+      # exclude months with less than two years with data
+      ts_f <- ts_f %>% 
+        filter( mo %in% mocnt$mo )
+      
+      if (nrow(mocnt) == 1)
+        # Data in only one month
+        res <- kendallTrendTest(value ~ yr, data = ts_f, independent.obs=FALSE)
+      else
+        # Mann-Kendall test with sesonality and autocorrelated data
+        res <- kendallSeasonalTrendTest(value ~ mo + yr, data = ts_f, independent.obs=FALSE)
+    
+  #    print('res')
+  #    print(res)
+      
+      res_df <- tibble(
+                      # p-value: if < 0.05, reject null-hypothesis of no trend
+                      ptrend = res$p.value['z (Trend)']
+                      # p-value: if < 0.05, reject null-hypothesis of no heterogeneity of trends across seasons
+                    , phet = res$p.value['Chi-Square (Het)']
+                      # slope of trend
+                    , sl = res$estimate['slope']
+                )
+#      print('res_df')
+#      print(res_df)
+    }
+    else
+      res_df <- tibble(ptrend = NA, phet = NA, sl = NA)
+  }
+  else
+    res_df <- tibble(ptrend = NA, phet = NA, sl = NA)
+
+  return(res_df)
+}
+```
+
+```{r, run_mk_tests}
+paramlist <- c('temp_c','secchi_in','chlA','P_total','N_total')
+start_time <- Sys.time()
+res <- dat_avg_ym %>%
+  filter( param %in% paramlist ) %>%
+  group_by(reservoir, loc_id, depth, param) %>%
+#  filter(reservoir == 'BHR' & loc_id == 'BHR20001' & depth == 15 & param == 'P_total') %>%
+  group_modify(~ KSTT(.x, .y))
+
+print('total time:')
+print(Sys.time() - start_time)
+```
+
+Count M-K results that are statistically significant
+```{r, count_mk_results}
+param_thresholds <- c(0.05, 0.05, 0.05, 0.05, 0.001)
+print(paste('Number of timeseries considered:', nrow(res)))
+idx <- !is.na(res$ptrend)
+print(paste('From the timeseries considered, how many have enough data points:', sum(idx)))
+idx <- !is.na(res$phet) & res$phet > 0.05 & !is.na(res$ptrend) & res$ptrend <= 0.05
+print(paste('From the timeseries with enough data points, how many have a statistically significant M-K test'
+            , sum(idx)))
+idx_p = list()
+for (i in 1:length(paramlist)){
+  idx_p[[i]] <- idx & res$param == paramlist[i]
+  print(paste('Number of statistically significant M-K tests for', paramlist[i]
+            , sum(idx_p[[i]])))
+  idx_p[[i]] <- idx_p[[i]] & res$param == paramlist[i] & abs(res$sl) > param_thresholds[i]
+  print(paste('Number of statistically significant M-K tests for', paramlist[i]
+            , 'with absolute trend greater than', param_thresholds[i], 'per year'
+            , sum(idx_p[[i]])))
+}
+tmp <- res[idx_p[[1]],] %>%
+  arrange(depth, desc(sl))
+print(tmp)
+```
+
+
+AUTOCORRELATION
+
+The plot below shows that for the specified location, some parameters are strongly correlated with the previous month, especially temperature, DO, and to a lesser extent, TSS.
+```{r, fig.height=20, fig.width=7}
+ts_acf %>%
+  autoplot() +
+  scale_y_continuous(limits=c(-1, 1))
+```
+Convert to timeseries
+```{r, fig.height=15, fig.width=7}
+ts <- dat_avg_ym %>%
+  as_tsibble(key = c(reservoir, loc_id, depth, param),
+             index = c(ym)) %>%
+  fill_gaps(.full = FALSE) %>%
+  mutate(yr = year(ym), mo = month(ym))
+```
+
+## visualize seasonality - not very useful for this data
+```{r, fig.height=15, fig.width=7}
+ts <- dat4 %>% 
+  mutate( mo = yearmonth(sample_date) ) %>%
+  select(-sample_num, -sample_date, -yr) %>%
+  group_by(reservoir, loc_id, mo, depth, param) %>%
+  summarise(value = mean(value), .groups = 'drop_last') %>%
+  ungroup()
+
+ts <- ts %>%
+  as_tsibble(key = c(reservoir, loc_id, depth, param),
+             index = mo) %>%
+  fill_gaps(.full = TRUE)
+tmp <- ts %>%
+  filter(reservoir == 'TAR' & depth == 0 & param == 'temp_c')
+gg_season(tmp, value)
+```
