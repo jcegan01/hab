@@ -10,15 +10,17 @@ library(tidyr)
 library(ggplot2)
 library(shiny)
 library(plotly)
-#library(shinyWidgets)
 
-# load data and assumptions pre calculated in pre_proc.Rmd
+# load data pre calculated in R notebook 01_wrangling
 load( 'data/wqdata_cleaned.rda' )
+
+# load trophic states
+load( 'data/reservoir_summary.rda' )
 
 # list of reservoirs
 reservoirs <- unique(dat4$reservoir)
 # list of parameters
-params <- list( "Chl-A algae indicator" = "chlA"
+params <- list( "Algae Chl-A indicator" = "chlA"
               , "Ammonia" = "ammonia"
               , "Dissolved Oxygen (mg/l)" = "DO_mgl"
               , "Dissolved Oxygen (% saturation)" = "DO_perc"
@@ -38,6 +40,14 @@ par_names <- as.list(unlist(names(params)))
 names(par_names) <- unlist(params,use.names=F)
 data$par_name <- recode( data$param, !!!par_names )
 
+# number of data points
+data_cnt <- data %>% 
+    group_by(reservoir,param,par_name) %>%
+    summarise(cnt = n(), .groups = "drop_last") %>%
+    mutate( label = paste0(par_name,' (n=',cnt,')')
+            , across(where(is.factor), as.character) ) 
+data_cnt <- data_cnt[with(data_cnt, order(reservoir,par_name)),]
+
 # time range in data
 yrrange <- as.numeric(range(dat4$yr))
 
@@ -49,12 +59,12 @@ ui <- fluidPage(
     sidebarLayout(
         # Grey Sidebar with input controls
         sidebarPanel(
-            selectInput( "reservoir", 'Select reservoir:', reservoirs, selected = 'NRR' )
-            , fluidRow( checkboxGroupInput('params', 'Select parameters to display:', params, selected=params[1:5]) )
+            selectInput( "reservoir", 'Select reservoir:', reservoirs, selected = 'TAR' )
+            , fluidRow( checkboxGroupInput('params', 'Select parameters to display:', params, selected=params[c(1,3,14)]) )
             , fluidRow( radioButtons( 'avg', 'Averaging:',
                                       choices = list('No averaging' = 'raw'
                                                      , 'Average over locations in each depth of reservoir' = 'avg_loc'),
-                                      selected = 'raw' ) )
+                                      selected = 'avg_loc' ) )
         ), # sidebarPanel
         # date slider and graph for selected reservoir
         mainPanel(
@@ -81,6 +91,13 @@ ui <- fluidPage(
 server <- function(input, output, session) {
     updatedInput <- reactive({
         # This reactive function is executed every time the reservoir or parameter selection change
+        
+        # the goal is to update the display of number of data points available for each param.
+        cnts <- data_cnt %>% filter( reservoir==input$reservoir )
+        updateCheckboxGroupInput(session, 'params'
+                                  , choiceNames = cnts$label, choiceValues = cnts$param
+                                 , selected = input$params)
+        
         # the goal is to update the date range in the slider
         df <- data %>% filter( reservoir==input$reservoir & param %in% input$params )
         yrrange <- as.numeric(range(df$yr))
@@ -91,14 +108,24 @@ server <- function(input, output, session) {
             updateSliderInput(session, 'years', min=yrrange[1], max=yrrange[2]
                               , value=c(yrrange[2]-5, yrrange[2]) )
             updateSliderInput(session, 'depths', min=drange[1], max=drange[2]
-                              , value=c(drange[1], drange[2]) )
+                              , value=c(drange[1], drange[1]) )
         }
-
-        return( df )
+        
+        # reservoir's trophic state to be displayed in chart title 
+        trophic <- reservoir.summary3$trophic_state[reservoir.summary3$reservoir == input$reservoir]
+        if ( !is.na(trophic) )
+            ggtit <- paste0(input$reservoir, ': ', trophic, ' (based on latest 5-year data)')
+        else
+            ggtit <- paste0(input$reservoir, ': latest 5-year data insufficient to determine trophic state')
+        
+        return( list(df, ggtit) )
     })
     
     output$distPlot <- renderPlotly({
-        df <- updatedInput()
+        # time series plots
+        u <- updatedInput()
+        df <- u[[1]]
+        ggtit <- u[[2]]
 
         dt <- df %>% filter( yr >= input$years[1] & yr <= input$years[2] 
                                & depth >= input$depths[1] & depth <= input$depths[2] )
@@ -108,36 +135,26 @@ server <- function(input, output, session) {
                      summarise( value = mean(value), loc_id = 'all', units = first(units)
                                 , .groups = "drop_last") %>%
                      ungroup()
-
+        
         p <- ggplot( dt ) +
             geom_point(aes(units=units, color=par_name, loc_id=loc_id, depth=depth, x=sample_date, y=value), size=1.5 ) +
+            ggtitle(ggtit) +
             ylab('Parameter Value') +
             theme_bw() +
-            theme(#plot.title = element_text(hjust = 0.5), 
+            theme(plot.title = element_text(hjust = 0.5), 
                   text = element_text(size=12), axis.title.x = element_blank()
                   , legend.title=element_blank()) 
 
         ggplotly(p, tooltip = c("x","y","units","par_name","loc_id","depth")
                  , dynamicTicks = TRUE) %>%
             layout(legend = list(orientation = "h", y = -0.05))
-        
-        # ax <- list( title = '' )
-        # fig <- dt %>%
-        #     plot_ly(
-        #         type = 'scatter'
-        #         , x = ~sample_date, y = ~value, color = ~par_name
-        #         , text = ~units
-        #         , hovertemplate = paste('<i>Date</i>: <b>%{x}</b>'
-        #                                 , '<br><i>Param</i>: %{color}'
-        #                                 , '<br><i>Value</i>: %{y:.2f}'
-        #                               , '<br><i>U</i>: %{text}'),
-        #           showlegend = FALSE
-        #  ) %>% layout( xaxis = ax, yaxis = ax )
     }) # closing of distPlot()
 
     output$corPlot <- renderPlotly({
-
-        df <- updatedInput()
+        # Correlation plot
+        u <- updatedInput()
+        df <- u[[1]]
+        ggtit <- u[[2]]
         
         dt <- df %>% filter( yr >= input$years[1] & yr <= input$years[2] 
                              & depth >= input$depths[1] & depth <= input$depths[2] )
@@ -161,7 +178,8 @@ server <- function(input, output, session) {
                 geom_point( shape=1 ) +
                 geom_smooth(method=lm) +  # Add linear regression line, add shaded confidence region
                 theme_bw() +
-                theme(text = element_text(size=12)) 
+                ggtitle(ggtit) +
+                theme(plot.title = element_text(hjust = 0.5), text = element_text(size=12)) 
             xr <- ggplot_build(p)$layout$panel_scales_x[[1]]$range$range
             yr <- ggplot_build(p)$layout$panel_scales_y[[1]]$range$range
             titx <- xr[1] + (xr[2] - xr[1]) * 0.3
