@@ -168,20 +168,16 @@ for (i in 1:length(paramlist)){
             , 'with absolute trend greater than', param_thresholds[i], 'per year'
             , sum(idx_p[[i]])))
 }
-tmp <- res[idx_p[[1]],] %>%
+res_ord <- res[idx_p[[1]],] %>%
   arrange(depth, desc(sl))
-print(tmp)
+print(res_ord)
 ```
 
 
 AUTOCORRELATION
 
 The plot below shows that for the specified location, some parameters are strongly correlated with the previous month, especially temperature, DO, and to a lesser extent, TSS.
-```{r, fig.height=20, fig.width=7}
-ts_acf %>%
-  autoplot() +
-  scale_y_continuous(limits=c(-1, 1))
-```
+
 Convert to timeseries
 ```{r, fig.height=15, fig.width=7}
 ts <- dat_avg_ym %>%
@@ -190,6 +186,20 @@ ts <- dat_avg_ym %>%
   fill_gaps(.full = FALSE) %>%
   mutate(yr = year(ym), mo = month(ym))
 ```
+
+```{r, fig.height=20, fig.width=7}
+tmp <- as.character(res_ord$loc_id[res_ord$depth==0])
+ts_acf <- ts %>%
+  filter(loc_id %in% tmp & param == 'temp_c' & depth == 0) %>%
+  feasts::ACF(value, lag_max = 9)
+```
+
+```{r, fig.height=5, fig.width=4}
+ts_acf %>%
+  autoplot() +
+  scale_y_continuous(limits=c(-0.85, 0.85))
+```
+
 
 ## visualize seasonality - not very useful for this data
 ```{r, fig.height=15, fig.width=7}
